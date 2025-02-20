@@ -32,10 +32,6 @@ A versatile Telegram bot powered by Google’s Gemini API, capable of handling t
    ```
 
 3. **Configure the Bot**:
-   - Copy `config.py.example` to `config.py`:
-     ```bash
-     cp config.py.example config.py
-     ```
    - Edit `config.py` with your credentials:
      ```python
      TELEGRAM_TOKEN = "your-telegram-token-here"
