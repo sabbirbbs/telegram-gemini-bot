@@ -93,8 +93,9 @@ def get_user_folder(username):
         logger.info(f"Created user folder: {folder_path}")
     return folder_path
 
+
 async def stream_text_response(chat_id: int, content, username: str, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Stream response chunks for text messages smoothly with configurable delay."""
+    """Stream each chunk directly from the API without additional validation."""
     logger.info(f"Processing text request for chat_id {chat_id} from {username}")
     instruction = load_system_instruction(username)
     try:
@@ -125,30 +126,28 @@ async def stream_text_response(chat_id: int, content, username: str, context: Co
         last_sent_response = TEXT_PROCESSING_MSG
         response = chat_session.send_message(current_parts, stream=True)
         
+        # Deliver each chunk directly
         for chunk in response:
-            chunk_text = chunk.text.strip()
+            chunk_text = chunk.text
             if chunk_text:
-                if full_response and not full_response[-1].isspace() and not full_response[-1] in ".!?,;:":
-                    full_response += " "
                 full_response += chunk_text
                 if full_response != last_sent_response:
                     await context.bot.edit_message_text(chat_id=chat_id, message_id=message_id, text=full_response)
                     last_sent_response = full_response
-                    logger.info(f"Updated text message for {username} with chunk: {chunk_text}")
+                    logger.info(f"Delivered chunk to {username}: {chunk_text}")
                 await asyncio.sleep(TEXT_STREAM_DELAY)
         
-        if full_response != last_sent_response:
-            if len(full_response) > 4096:
-                parts = [full_response[i:i+4096] for i in range(0, len(full_response), 4096)]
-                for i, part in enumerate(parts):
-                    if i == 0:
-                        await context.bot.edit_message_text(chat_id=chat_id, message_id=message_id, text=part)
-                    else:
-                        await context.bot.send_message(chat_id=chat_id, text=part)
-                    await asyncio.sleep(TEXT_STREAM_DELAY)
-            else:
-                await context.bot.edit_message_text(chat_id=chat_id, message_id=message_id, text=full_response)
+        # Handle Telegram's 4096 character limit if needed
+        if len(full_response) > 4096:
+            parts = [full_response[i:i+4096] for i in range(0, len(full_response), 4096)]
+            for i, part in enumerate(parts):
+                if i == 0:
+                    await context.bot.edit_message_text(chat_id=chat_id, message_id=message_id, text=part)
+                else:
+                    await context.bot.send_message(chat_id=chat_id, text=part)
+                await asyncio.sleep(TEXT_STREAM_DELAY)
         
+        # Update history
         user_history.append({"role": "user", "parts": current_parts})
         user_history.append({"role": "model", "parts": [full_response]})
         if len(user_history) > MAX_HISTORY:
