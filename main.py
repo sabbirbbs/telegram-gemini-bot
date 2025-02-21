@@ -93,9 +93,8 @@ def get_user_folder(username):
         logger.info(f"Created user folder: {folder_path}")
     return folder_path
 
-
 async def stream_text_response(chat_id: int, content, username: str, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Stream each chunk directly from the API without additional validation."""
+    """Stream response smoothly for any language, minimizing mid-word splits."""
     logger.info(f"Processing text request for chat_id {chat_id} from {username}")
     instruction = load_system_instruction(username)
     try:
@@ -123,21 +122,35 @@ async def stream_text_response(chat_id: int, content, username: str, context: Co
     
     try:
         full_response = ""
+        buffer = ""  # Lightweight buffer for incomplete segments
         last_sent_response = TEXT_PROCESSING_MSG
         response = chat_session.send_message(current_parts, stream=True)
         
-        # Deliver each chunk directly
+        # Use synchronous for loop since response isn’t an async iterable
         for chunk in response:
             chunk_text = chunk.text
             if chunk_text:
-                full_response += chunk_text
-                if full_response != last_sent_response:
-                    await context.bot.edit_message_text(chat_id=chat_id, message_id=message_id, text=full_response)
-                    last_sent_response = full_response
-                    logger.info(f"Delivered chunk to {username}: {chunk_text}")
-                await asyncio.sleep(TEXT_STREAM_DELAY)
+                buffer += chunk_text
+                
+                # Send the buffer if it’s long enough or ends with a natural break
+                if len(buffer) >= 10 or buffer[-1] in " ।?!,;:\n":  # Arbitrary length or boundary
+                    full_response += buffer
+                    buffer = ""
+                    
+                    if full_response != last_sent_response:
+                        await context.bot.edit_message_text(chat_id=chat_id, message_id=message_id, text=full_response)
+                        last_sent_response = full_response
+                        logger.info(f"Streamed segment to {username}: {chunk_text}")
+                    await asyncio.sleep(TEXT_STREAM_DELAY)
         
-        # Handle Telegram's 4096 character limit if needed
+        # Flush any remaining buffer
+        if buffer:
+            full_response += buffer
+            if full_response != last_sent_response:
+                await context.bot.edit_message_text(chat_id=chat_id, message_id=message_id, text=full_response)
+                logger.info(f"Flushed final buffer to {username}: {buffer}")
+        
+        # Handle Telegram's 4096 character limit
         if len(full_response) > 4096:
             parts = [full_response[i:i+4096] for i in range(0, len(full_response), 4096)]
             for i, part in enumerate(parts):
