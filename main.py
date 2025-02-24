@@ -93,8 +93,41 @@ def get_user_folder(username):
         logger.info(f"Created user folder: {folder_path}")
     return folder_path
 
+def split_text_naturally(text, max_length=4096):
+    """Split text into chunks at natural boundaries without breaking words, within max_length."""
+    if len(text) <= max_length:
+        return [text]
+    
+    chunks = []
+    current_chunk = ""
+    last_break = 0
+    
+    for i, char in enumerate(text):
+        current_chunk += char
+        
+        # Track potential break points (spaces or punctuation)
+        if char.isspace() or char in "।?!,;:\n":
+            last_break = i
+        
+        # If chunk exceeds max_length, split at the last safe break
+        if len(current_chunk) > max_length:
+            if last_break == 0:  # No break found, force split at max_length
+                chunks.append(current_chunk[:max_length].strip())
+                current_chunk = current_chunk[max_length:]
+                last_break = 0
+            else:
+                chunks.append(current_chunk[:last_break + 1].strip())
+                current_chunk = current_chunk[last_break + 1:].strip()
+                last_break = 0
+    
+    # Add remaining text as the last chunk
+    if current_chunk:
+        chunks.append(current_chunk.strip())
+    
+    return chunks
+
 async def stream_text_response(chat_id: int, content, username: str, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Stream response smoothly for any language, minimizing mid-word splits."""
+    """Stream text response chunk-by-chunk, respecting word boundaries and Telegram's 4096 limit."""
     logger.info(f"Processing text request for chat_id {chat_id} from {username}")
     instruction = load_system_instruction(username)
     try:
@@ -122,42 +155,40 @@ async def stream_text_response(chat_id: int, content, username: str, context: Co
     
     try:
         full_response = ""
-        buffer = ""  # Lightweight buffer for incomplete segments
-        last_sent_response = TEXT_PROCESSING_MSG
-        response = chat_session.send_message(current_parts, stream=True)
+        buffer = ""  # Buffer for incomplete segments
         
-        # Use synchronous for loop since response isn’t an async iterable
+        response = chat_session.send_message(current_parts, stream=True)
         for chunk in response:
             chunk_text = chunk.text
             if chunk_text:
                 buffer += chunk_text
                 
-                # Send the buffer if it’s long enough or ends with a natural break
-                if len(buffer) >= 10 or buffer[-1] in " ।?!,;:\n":  # Arbitrary length or boundary
+                # Check for a natural break to send a chunk
+                if len(buffer) >= 100 or buffer[-1] in " ।?!,;:\n":  # Larger buffer for smoother streaming
                     full_response += buffer
                     buffer = ""
                     
-                    if full_response != last_sent_response:
-                        await context.bot.edit_message_text(chat_id=chat_id, message_id=message_id, text=full_response)
-                        last_sent_response = full_response
-                        logger.info(f"Streamed segment to {username}: {chunk_text}")
-                    await asyncio.sleep(TEXT_STREAM_DELAY)
+                    # Split and send if over 4096, or edit if under
+                    chunks = split_text_naturally(full_response)
+                    for i, part in enumerate(chunks):
+                        if i == 0:
+                            await context.bot.edit_message_text(chat_id=chat_id, message_id=message_id, text=part)
+                        else:
+                            message = await context.bot.send_message(chat_id=chat_id, text=part)
+                            message_id = message.message_id  # Update message_id for next edit
+                        await asyncio.sleep(TEXT_STREAM_DELAY)
+                    full_response = chunks[-1]  # Retain last chunk
         
-        # Flush any remaining buffer
+        # Flush remaining buffer
         if buffer:
             full_response += buffer
-            if full_response != last_sent_response:
-                await context.bot.edit_message_text(chat_id=chat_id, message_id=message_id, text=full_response)
-                logger.info(f"Flushed final buffer to {username}: {buffer}")
-        
-        # Handle Telegram's 4096 character limit
-        if len(full_response) > 4096:
-            parts = [full_response[i:i+4096] for i in range(0, len(full_response), 4096)]
-            for i, part in enumerate(parts):
+            chunks = split_text_naturally(full_response)
+            for i, part in enumerate(chunks):
                 if i == 0:
                     await context.bot.edit_message_text(chat_id=chat_id, message_id=message_id, text=part)
                 else:
-                    await context.bot.send_message(chat_id=chat_id, text=part)
+                    message = await context.bot.send_message(chat_id=chat_id, text=part)
+                    message_id = message.message_id
                 await asyncio.sleep(TEXT_STREAM_DELAY)
         
         # Update history
@@ -173,7 +204,7 @@ async def stream_text_response(chat_id: int, content, username: str, context: Co
         await context.bot.edit_message_text(chat_id=chat_id, message_id=message_id, text=TEXT_ERROR_MSG)
 
 async def stream_response(chat_id: int, content, username: str, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Handle response streaming for media with configurable delay."""
+    """Stream media response chunk-by-chunk, respecting word boundaries and Telegram's 4096 limit."""
     logger.info(f"Processing media request for chat_id {chat_id} from {username}")
     instruction = load_system_instruction(username)
     try:
@@ -212,52 +243,62 @@ async def stream_response(chat_id: int, content, username: str, context: Context
                 with open(file_path, 'wb') as f:
                     f.write(item["data"])
                 logger.info(f"Saved {file_type} to {file_path}")
-                try:
-                    uploaded_file = genai.upload_file(file_path, mime_type=item["mime_type"])
-                    parts.append(uploaded_file)
-                except Exception as e:
-                    logger.error(f"Gemini upload failed for {file_type} at {file_path}: {str(e)}")
-                    await context.bot.edit_message_text(chat_id=chat_id, message_id=message_id, text=UPLOAD_ERROR_MSG)
-                    return
-                # os.remove(file_path)  # Commented out to keep files for debugging
+                uploaded_file = genai.upload_file(file_path, mime_type=item["mime_type"])
+                parts.append(uploaded_file)
             except Exception as e:
-                logger.exception(f"Error saving or uploading {file_type} for chat_id {chat_id}: {str(e)}")
+                logger.error(f"Gemini upload failed for {file_type} at {file_path}: {str(e)}")
                 await context.bot.edit_message_text(chat_id=chat_id, message_id=message_id, text=UPLOAD_ERROR_MSG)
                 return
+    
     current_parts = parts
     
     try:
         await context.bot.edit_message_text(chat_id=chat_id, message_id=message_id, text=MEDIA_PROCESSING_MSG)
         full_response = ""
-        last_update_time = 0
+        buffer = ""
         
         response = chat_session.send_message(current_parts, stream=True)
         for chunk in response:
             chunk_text = chunk.text.strip()
             if chunk_text:
-                if full_response and not full_response[-1].isspace() and not full_response[-1] in ".!?,;:":
-                    full_response += " "
-                full_response += chunk_text
-                current_time = datetime.datetime.now().timestamp()
-                if current_time - last_update_time >= MEDIA_STREAM_DELAY:
-                    await context.bot.edit_message_text(chat_id=chat_id, message_id=message_id, text=full_response)
-                    last_update_time = current_time
-                    logger.info(f"Updated message for {username} with chunk: {chunk_text}")
+                buffer += chunk_text
+                
+                # Stream at natural breaks
+                if len(buffer) >= 100 or buffer[-1] in " ।?!,;:\n":
+                    if full_response and not full_response[-1].isspace() and not full_response[-1] in "।?!,;:\n":
+                        full_response += " "
+                    full_response += buffer
+                    buffer = ""
+                    
+                    # Split and send chunks
+                    chunks = split_text_naturally(full_response)
+                    for i, part in enumerate(chunks):
+                        if i == 0:
+                            await context.bot.edit_message_text(chat_id=chat_id, message_id=message_id, text=part)
+                        else:
+                            message = await context.bot.send_message(chat_id=chat_id, text=part)
+                            message_id = message.message_id  # Update message_id for next edit
+                        await asyncio.sleep(MEDIA_STREAM_DELAY)
+                    full_response = chunks[-1]  # Keep last chunk for continuity
+        
+        # Flush remaining buffer
+        if buffer:
+            if full_response and not full_response[-1].isspace() and not full_response[-1] in "।?!,;:\n":
+                full_response += " "
+            full_response += buffer
+            chunks = split_text_naturally(full_response)
+            for i, part in enumerate(chunks):
+                if i == 0:
+                    await context.bot.edit_message_text(chat_id=chat_id, message_id=message_id, text=part)
+                else:
+                    message = await context.bot.send_message(chat_id=chat_id, text=part)
+                    message_id = message.message_id
+                await asyncio.sleep(MEDIA_STREAM_DELAY)
         
         if not full_response:
             await context.bot.edit_message_text(chat_id=chat_id, message_id=message_id, text="I couldn’t generate a response for that.")
-        else:
-            if len(full_response) > 4096:
-                parts = [full_response[i:i+4096] for i in range(0, len(full_response), 4096)]
-                for i, part in enumerate(parts):
-                    if i == 0:
-                        await context.bot.edit_message_text(chat_id=chat_id, message_id=message_id, text=part)
-                    else:
-                        await context.bot.send_message(chat_id=chat_id, text=part)
-                    await asyncio.sleep(MEDIA_STREAM_DELAY)
-            else:
-                await context.bot.edit_message_text(chat_id=chat_id, message_id=message_id, text=full_response)
         
+        # Update history
         user_history.append({"role": "user", "parts": [part.uri if hasattr(part, 'uri') else part for part in current_parts]})
         user_history.append({"role": "model", "parts": [full_response]})
         if len(user_history) > MAX_HISTORY:
