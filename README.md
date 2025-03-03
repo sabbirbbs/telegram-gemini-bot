@@ -1,8 +1,6 @@
 # Telegram Gemini Bot
 
-![Python](https://img.shields.io/badge/Python-3.8+-blue.svg)  
-![License](https://img.shields.io/badge/License-MIT-green.svg)  
-![Status](https://img.shields.io/badge/Status-Active-brightgreen.svg)  
+![Python](https://img.shields.io/badge/Python-3.8+-blue.svg) ![License](https://img.shields.io/badge/License-MIT-green.svg) ![Status](https://img.shields.io/badge/Status-Active-brightgreen.svg)
 
 A powerful and adaptable Telegram bot leveraging Google’s Gemini API, capable of processing text, images, audio, and video while delivering smooth streaming responses. It maintains chat history for contextual conversations and allows users to define personalized instructions.
 
