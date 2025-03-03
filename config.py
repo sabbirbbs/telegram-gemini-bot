@@ -6,12 +6,11 @@ BASE_DIR = "user_uploads"
 HISTORY_DIR = "user_history"
 INSTRUCTION_DIR = "instruction"
 MODEL_NAME = "gemini-2.0-flash"
-ADMINS = {"admin1", "547124517957"}  # Replace with actual admin usernames (e.g., "5971978277")
 MAX_HISTORY = 10
 TEXT_STREAM_DELAY = 0.1
 MEDIA_STREAM_DELAY = 0.5
 API_REQUEST_TIMEOUT = 10
-
+ENABLE_MESSAGE_MENTION = True
 TEXT_PROCESSING_MSG = "Thinking..."
 MEDIA_UPLOADING_MSG = "Uploading your file..."
 MEDIA_PROCESSING_MSG = "Processing your request..."
