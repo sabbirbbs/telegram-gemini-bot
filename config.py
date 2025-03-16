@@ -10,7 +10,10 @@ MAX_HISTORY = 10
 TEXT_STREAM_DELAY = 0.1
 MEDIA_STREAM_DELAY = 0.5
 API_REQUEST_TIMEOUT = 10
-ENABLE_MESSAGE_MENTION = True
+ENABLE_MESSAGE_MENTION = True  # Set to False to disable replying to messages
+ADMIN_USERNAME = "username"  # Replace with the admin's Telegram username (e.g., "sabbirbbs")
+ADMIN_ACTIVITY_TIMEOUT = 300  # Time in seconds (5 minutes) after which admin is considered inactive
+
 TEXT_PROCESSING_MSG = "Thinking..."
 MEDIA_UPLOADING_MSG = "Uploading your file..."
 MEDIA_PROCESSING_MSG = "Processing your request..."
