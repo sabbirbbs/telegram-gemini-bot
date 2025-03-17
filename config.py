@@ -2,6 +2,7 @@
 
 TELEGRAM_TOKEN = "637724577785:AAGVi56ygefsfes849xgfrrN11Z10Ufse4"
 GEMINI_API_KEY = "AIdsadeYwewTLwewmNNqwewNtN8A"
+
 BASE_DIR = "user_uploads"
 HISTORY_DIR = "user_history"
 INSTRUCTION_DIR = "instruction"
@@ -11,8 +12,9 @@ TEXT_STREAM_DELAY = 0.1
 MEDIA_STREAM_DELAY = 0.5
 API_REQUEST_TIMEOUT = 10
 ENABLE_MESSAGE_MENTION = True  # Set to False to disable replying to messages
-ADMIN_USERNAME = "username"  # Replace with the admin's Telegram username (e.g., "sabbirbbs")
-ADMIN_ACTIVITY_TIMEOUT = 300  # Time in seconds (5 minutes) after which admin is considered inactive
+ADMIN_USERNAME = "username"  # Replace with the admin's Telegram username (e.g., "username")
+ADMIN_ACTIVITY_TIMEOUT = 120  # Time in seconds (2 minutes) after which admin is considered inactive
+
 
 TEXT_PROCESSING_MSG = "Thinking..."
 MEDIA_UPLOADING_MSG = "Uploading your file..."
