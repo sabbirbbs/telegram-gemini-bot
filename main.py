@@ -30,43 +30,8 @@ for directory in [BASE_DIR, HISTORY_DIR, INSTRUCTION_DIR]:
         os.makedirs(directory)
         logger.info(f"Created directory: {directory}")
 
-# File to store admin's last active time in HISTORY_DIR
-ADMIN_ACTIVITY_FILE = os.path.join(HISTORY_DIR, "admin_activity.txt")
-
-# Load admin's last active time from file
-def load_admin_activity():
-    try:
-        if os.path.exists(ADMIN_ACTIVITY_FILE):
-            with open(ADMIN_ACTIVITY_FILE, 'r', encoding='utf-8') as f:
-                timestamp_str = f.read().strip()
-                return datetime.datetime.fromisoformat(timestamp_str)
-        return None
-    except Exception as e:
-        logger.error(f"Error loading admin activity from {ADMIN_ACTIVITY_FILE}: {str(e)}")
-        return None
-
-# Save admin's last active time to file
-def save_admin_activity():
-    try:
-        with open(ADMIN_ACTIVITY_FILE, 'w', encoding='utf-8') as f:
-            f.write(datetime.datetime.now().isoformat())
-        logger.info(f"Admin activity saved at {datetime.datetime.now()} to {ADMIN_ACTIVITY_FILE}")
-    except Exception as e:
-        logger.error(f"Error saving admin activity to {ADMIN_ACTIVITY_FILE}: {str(e)}")
-
-# Update admin activity
-def update_admin_activity():
-    save_admin_activity()
-
-# Check if admin is active
-def is_admin_active():
-    last_active = load_admin_activity()
-    if last_active is None:
-        return False
-    now = datetime.datetime.now()
-    time_diff = (now - last_active).total_seconds()
-    logger.info(f"Time since last admin activity: {time_diff} seconds")
-    return time_diff <= ADMIN_ACTIVITY_TIMEOUT
+# Global variable to track admin's last activity
+admin_last_active = None
 
 # Load system instruction from file
 def load_system_instruction(username):
@@ -195,6 +160,21 @@ def split_text_naturally(text, max_length=4096):
         chunks.append(current_chunk.strip())
     
     return chunks
+
+# Check if admin is active
+def is_admin_active():
+    global admin_last_active
+    if admin_last_active is None:
+        return False
+    now = datetime.datetime.now()
+    time_diff = (now - admin_last_active).total_seconds()
+    return time_diff <= ADMIN_ACTIVITY_TIMEOUT
+
+# Update admin activity
+def update_admin_activity():
+    global admin_last_active
+    admin_last_active = datetime.datetime.now()
+    logger.info(f"Admin activity updated at {admin_last_active}")
 
 async def stream_text_response(chat_id: int, content, username: str, context: ContextTypes.DEFAULT_TYPE, reply_to_message_id: int = None) -> None:
     logger.info(f"Processing text request for chat_id {chat_id} from {username}")
@@ -391,22 +371,16 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     text = update.message.text
     reply_to_message_id = update.message.message_id if ENABLE_MESSAGE_MENTION else None
     
-    # Log for debugging
-    logger.info(f"User: {username}, Admin set as: {ADMIN_USERNAME}, Chat type: {update.effective_chat.type}")
-    
-    # Update admin activity if this is the admin and in a group
-    if username == ADMIN_USERNAME and update.effective_chat.type in ["group", "supergroup"]:
+    # Update admin activity if this is the admin
+    if username == ADMIN_USERNAME:
         update_admin_activity()
-        logger.info(f"Admin {username} is active in group chat_id {chat_id}, last active saved")
-        return  # Admin is active in group, bot stays silent
+        logger.info(f"Admin {username} is active in chat_id {chat_id}")
+        return  # Admin is active, bot stays silent
     
     # Check if this is a group chat and admin is active
-    if update.effective_chat.type in ["group", "supergroup"]:
-        admin_active = is_admin_active()
-        logger.info(f"Group chat detected, Admin active: {admin_active}")
-        if admin_active:
-            logger.info(f"Admin is active, bot staying silent in chat_id {chat_id}")
-            return
+    if update.effective_chat.type in ["group", "supergroup"] and is_admin_active():
+        logger.info(f"Admin is active, bot staying silent in chat_id {chat_id}")
+        return
     
     logger.info(f"Received text message from {username}: {text}")
     await stream_text_response(chat_id, text, username, context, reply_to_message_id)
@@ -419,9 +393,9 @@ async def handle_image(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     caption = update.message.caption or "Explain this image"
     reply_to_message_id = update.message.message_id if ENABLE_MESSAGE_MENTION else None
     
-    if username == ADMIN_USERNAME and update.effective_chat.type in ["group", "supergroup"]:
+    if username == ADMIN_USERNAME:
         update_admin_activity()
-        logger.info(f"Admin {username} is active in group chat_id {chat_id}")
+        logger.info(f"Admin {username} is active in chat_id {chat_id}")
         return
     
     if update.effective_chat.type in ["group", "supergroup"] and is_admin_active():
@@ -459,9 +433,9 @@ async def handle_audio(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     caption = update.message.caption or "Take this as a normal message & answer if it seems something else than Transcribe and summarize this audio."
     reply_to_message_id = update.message.message_id if ENABLE_MESSAGE_MENTION else None
     
-    if username == ADMIN_USERNAME and update.effective_chat.type in ["group", "supergroup"]:
+    if username == ADMIN_USERNAME:
         update_admin_activity()
-        logger.info(f"Admin {username} is active in group chat_id {chat_id}")
+        logger.info(f"Admin {username} is active in chat_id {chat_id}")
         return
     
     if update.effective_chat.type in ["group", "supergroup"] and is_admin_active():
@@ -502,9 +476,9 @@ async def handle_video(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     caption = update.message.caption or "What do you see in this video?"
     reply_to_message_id = update.message.message_id if ENABLE_MESSAGE_MENTION else None
     
-    if username == ADMIN_USERNAME and update.effective_chat.type in ["group", "supergroup"]:
+    if username == ADMIN_USERNAME:
         update_admin_activity()
-        logger.info(f"Admin {username} is active in group chat_id {chat_id}")
+        logger.info(f"Admin {username} is active in chat_id {chat_id}")
         return
     
     if update.effective_chat.type in ["group", "supergroup"] and is_admin_active():
@@ -539,9 +513,9 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     reply_to_message_id = update.message.message_id if ENABLE_MESSAGE_MENTION else None
     username = update.message.from_user.username or str(update.message.from_user.id)
     
-    if username == ADMIN_USERNAME and update.effective_chat.type in ["group", "supergroup"]:
+    if username == ADMIN_USERNAME:
         update_admin_activity()
-        logger.info(f"Admin {username} is active in group chat_id {chat_id}")
+        logger.info(f"Admin {username} is active in chat_id {chat_id}")
     
     logger.info(f"Received /start command from chat_id {chat_id}")
     await context.bot.send_message(chat_id=chat_id, text=START_MSG, reply_to_message_id=reply_to_message_id)
@@ -552,9 +526,9 @@ async def set_instruction(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     chat_id = update.effective_chat.id
     reply_to_message_id = update.message.message_id if ENABLE_MESSAGE_MENTION else None
     
-    if username == ADMIN_USERNAME and update.effective_chat.type in ["group", "supergroup"]:
+    if username == ADMIN_USERNAME:
         update_admin_activity()
-        logger.info(f"Admin {username} is active in group chat_id {chat_id}")
+        logger.info(f"Admin {username} is active in chat_id {chat_id}")
     
     instruction = " ".join(context.args).strip()
     logger.info(f"Received /setinstruction from {username}")
@@ -574,9 +548,9 @@ async def clean_instruction(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     chat_id = update.effective_chat.id
     reply_to_message_id = update.message.message_id if ENABLE_MESSAGE_MENTION else None
     
-    if username == ADMIN_USERNAME and update.effective_chat.type in ["group", "supergroup"]:
+    if username == ADMIN_USERNAME:
         update_admin_activity()
-        logger.info(f"Admin {username} is active in group chat_id {chat_id}")
+        logger.info(f"Admin {username} is active in chat_id {chat_id}")
     
     logger.info(f"Received /cleaninstruction from {username}")
     
@@ -591,9 +565,9 @@ async def show_instruction(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     chat_id = update.effective_chat.id
     reply_to_message_id = update.message.message_id if ENABLE_MESSAGE_MENTION else None
     
-    if username == ADMIN_USERNAME and update.effective_chat.type in ["group", "supergroup"]:
+    if username == ADMIN_USERNAME:
         update_admin_activity()
-        logger.info(f"Admin {username} is active in group chat_id {chat_id}")
+        logger.info(f"Admin {username} is active in chat_id {chat_id}")
     
     logger.info(f"Received /showinstruction from {username}")
     
