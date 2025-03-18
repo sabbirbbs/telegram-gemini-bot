@@ -30,11 +30,9 @@ for directory in [BASE_DIR, HISTORY_DIR, INSTRUCTION_DIR]:
         os.makedirs(directory)
         logger.info(f"Created directory: {directory}")
 
-# Global variable to track admin's last activity
-admin_last_active = None
-
 # Load system instruction from file
 def load_system_instruction(username):
+    """Load custom instruction from txt file for a user, return None if not found."""
     try:
         instruction_file = os.path.join(INSTRUCTION_DIR, f"{username}.txt")
         logger.info(f"Looking for instruction file: {instruction_file}")
@@ -60,6 +58,7 @@ def load_system_instruction(username):
 
 # Load user-specific instruction only (for showinstruction)
 def load_user_instruction(username):
+    """Load only the user-specific instruction, excluding general.txt."""
     try:
         instruction_file = os.path.join(INSTRUCTION_DIR, f"{username}.txt")
         if os.path.exists(instruction_file):
@@ -74,6 +73,7 @@ def load_user_instruction(username):
 
 # Save custom instruction for a user
 def save_system_instruction(username, instruction):
+    """Save custom instruction to a file named after the username."""
     try:
         instruction_file = os.path.join(INSTRUCTION_DIR, f"{username}.txt")
         with open(instruction_file, 'w', encoding='utf-8') as f:
@@ -86,6 +86,7 @@ def save_system_instruction(username, instruction):
 
 # Delete custom instruction for a user
 def delete_system_instruction(username):
+    """Delete the custom instruction file for a user."""
     try:
         instruction_file = os.path.join(INSTRUCTION_DIR, f"{username}.txt")
         if os.path.exists(instruction_file):
@@ -133,6 +134,7 @@ def get_user_folder(username):
     return folder_path
 
 def split_text_naturally(text, max_length=4096):
+    """Split text into chunks at natural boundaries without breaking words, within max_length."""
     if len(text) <= max_length:
         return [text]
     
@@ -161,22 +163,8 @@ def split_text_naturally(text, max_length=4096):
     
     return chunks
 
-# Check if admin is active
-def is_admin_active():
-    global admin_last_active
-    if admin_last_active is None:
-        return False
-    now = datetime.datetime.now()
-    time_diff = (now - admin_last_active).total_seconds()
-    return time_diff <= ADMIN_ACTIVITY_TIMEOUT
-
-# Update admin activity
-def update_admin_activity():
-    global admin_last_active
-    admin_last_active = datetime.datetime.now()
-    logger.info(f"Admin activity updated at {admin_last_active}")
-
 async def stream_text_response(chat_id: int, content, username: str, context: ContextTypes.DEFAULT_TYPE, reply_to_message_id: int = None) -> None:
+    """Stream text response chunk-by-chunk, optionally replying to the original message."""
     logger.info(f"Processing text request for chat_id {chat_id} from {username}")
     instruction = load_system_instruction(username)
     try:
@@ -255,6 +243,7 @@ async def stream_text_response(chat_id: int, content, username: str, context: Co
             await context.bot.edit_message_text(chat_id=chat_id, message_id=message_id, text=TEXT_ERROR_MSG)
 
 async def stream_response(chat_id: int, content, username: str, context: ContextTypes.DEFAULT_TYPE, reply_to_message_id: int = None) -> None:
+    """Stream media response chunk-by-chunk, optionally replying to the original message."""
     logger.info(f"Processing media request for chat_id {chat_id} from {username}")
     instruction = load_system_instruction(username)
     try:
@@ -370,18 +359,6 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     chat_id = update.effective_chat.id
     text = update.message.text
     reply_to_message_id = update.message.message_id if ENABLE_MESSAGE_MENTION else None
-    
-    # Update admin activity if this is the admin
-    if username == ADMIN_USERNAME:
-        update_admin_activity()
-        logger.info(f"Admin {username} is active in chat_id {chat_id}")
-        return  # Admin is active, bot stays silent
-    
-    # Check if this is a group chat and admin is active
-    if update.effective_chat.type in ["group", "supergroup"] and is_admin_active():
-        logger.info(f"Admin is active, bot staying silent in chat_id {chat_id}")
-        return
-    
     logger.info(f"Received text message from {username}: {text}")
     await stream_text_response(chat_id, text, username, context, reply_to_message_id)
 
@@ -392,17 +369,8 @@ async def handle_image(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     file = update.message.photo[-1]
     caption = update.message.caption or "Explain this image"
     reply_to_message_id = update.message.message_id if ENABLE_MESSAGE_MENTION else None
-    
-    if username == ADMIN_USERNAME:
-        update_admin_activity()
-        logger.info(f"Admin {username} is active in chat_id {chat_id}")
-        return
-    
-    if update.effective_chat.type in ["group", "supergroup"] and is_admin_active():
-        logger.info(f"Admin is active, bot staying silent in chat_id {chat_id}")
-        return
-    
     logger.info(f"Received image from {username} with caption: {caption}")
+    
     try:
         file_obj = await file.get_file()
         file_url = file_obj.file_path
@@ -432,17 +400,8 @@ async def handle_audio(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     file = update.message.audio or update.message.voice
     caption = update.message.caption or "Take this as a normal message & answer if it seems something else than Transcribe and summarize this audio."
     reply_to_message_id = update.message.message_id if ENABLE_MESSAGE_MENTION else None
-    
-    if username == ADMIN_USERNAME:
-        update_admin_activity()
-        logger.info(f"Admin {username} is active in chat_id {chat_id}")
-        return
-    
-    if update.effective_chat.type in ["group", "supergroup"] and is_admin_active():
-        logger.info(f"Admin is active, bot staying silent in chat_id {chat_id}")
-        return
-    
     logger.info(f"Received audio from {username} with caption: {caption}")
+    
     try:
         file_obj = await file.get_file()
         file_url = file_obj.file_path
@@ -475,17 +434,8 @@ async def handle_video(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         return
     caption = update.message.caption or "What do you see in this video?"
     reply_to_message_id = update.message.message_id if ENABLE_MESSAGE_MENTION else None
-    
-    if username == ADMIN_USERNAME:
-        update_admin_activity()
-        logger.info(f"Admin {username} is active in chat_id {chat_id}")
-        return
-    
-    if update.effective_chat.type in ["group", "supergroup"] and is_admin_active():
-        logger.info(f"Admin is active, bot staying silent in chat_id {chat_id}")
-        return
-    
     logger.info(f"Received video from {username} with caption: {caption}")
+    
     try:
         file_obj = await file.get_file()
         file_url = file_obj.file_path
@@ -511,12 +461,6 @@ async def handle_video(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     chat_id = update.effective_chat.id
     reply_to_message_id = update.message.message_id if ENABLE_MESSAGE_MENTION else None
-    username = update.message.from_user.username or str(update.message.from_user.id)
-    
-    if username == ADMIN_USERNAME:
-        update_admin_activity()
-        logger.info(f"Admin {username} is active in chat_id {chat_id}")
-    
     logger.info(f"Received /start command from chat_id {chat_id}")
     await context.bot.send_message(chat_id=chat_id, text=START_MSG, reply_to_message_id=reply_to_message_id)
 
@@ -525,12 +469,8 @@ async def set_instruction(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     username = user.username or str(user.id)
     chat_id = update.effective_chat.id
     reply_to_message_id = update.message.message_id if ENABLE_MESSAGE_MENTION else None
-    
-    if username == ADMIN_USERNAME:
-        update_admin_activity()
-        logger.info(f"Admin {username} is active in chat_id {chat_id}")
-    
     instruction = " ".join(context.args).strip()
+    
     logger.info(f"Received /setinstruction from {username}")
     
     if not instruction:
@@ -548,10 +488,6 @@ async def clean_instruction(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     chat_id = update.effective_chat.id
     reply_to_message_id = update.message.message_id if ENABLE_MESSAGE_MENTION else None
     
-    if username == ADMIN_USERNAME:
-        update_admin_activity()
-        logger.info(f"Admin {username} is active in chat_id {chat_id}")
-    
     logger.info(f"Received /cleaninstruction from {username}")
     
     if delete_system_instruction(username):
@@ -564,10 +500,6 @@ async def show_instruction(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     username = user.username or str(user.id)
     chat_id = update.effective_chat.id
     reply_to_message_id = update.message.message_id if ENABLE_MESSAGE_MENTION else None
-    
-    if username == ADMIN_USERNAME:
-        update_admin_activity()
-        logger.info(f"Admin {username} is active in chat_id {chat_id}")
     
     logger.info(f"Received /showinstruction from {username}")
     
